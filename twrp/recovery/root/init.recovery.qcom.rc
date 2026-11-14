@@ -1,0 +1,38 @@
+# Recovery-only init for the LG G Pad X 8.0 (V521).
+#
+# 8.0-era init (unlike 7.1) no longer creates the /dev/block/bootdevice
+# symlink, and every partition path in the fstab depends on it. The ROM does
+# this in rootdir/etc/init.target.rc; recovery needs its own copy because
+# TWRP's init.rc only imports /init.recovery.${ro.hardware}.rc.
+
+on early-init
+    # Let adbd keep root privileges.
+    #
+    # Android 8.1's adbd (system/core/adb/daemon/main.cpp,
+    # should_drop_privileges()) drops to AID_SHELL unless BOTH ro.debuggable=1
+    # AND "lineage.service.adb.root"=1 are set.  TWRP's own init.rc only sets
+    # the AOSP-named "service.adb.root", which this adbd does not look at, so
+    # the shell ends up as uid 2000 and cannot exec the 0750 /sbin/sh.
+    # Setting the Lineage-named property here (before adbd is started) makes
+    # adbd run as root, like the 3.1.1 recovery does.
+    setprop lineage.service.adb.root 1
+
+on property:ro.debuggable=1
+    setprop lineage.service.adb.root 1
+
+on fs
+    wait /dev/block/platform/soc.0/${ro.boot.bootdevice}
+    symlink /dev/block/platform/soc.0/${ro.boot.bootdevice} /dev/block/bootdevice
+
+    setprop ro.board.platform msm8952
+
+# Keymaster/keystore daemon, needed to unlock an encrypted data partition.
+service sbinqseecomd /sbin/qseecomd
+    oneshot
+    disabled
+    user root
+    group root
+    seclabel u:r:recovery:s0
+
+on property:ro.crypto.state=encrypted
+    start sbinqseecomd
